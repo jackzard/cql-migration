@@ -4,6 +4,7 @@ import dedent from 'dedent'
 import fs from 'fs'
 
 const [, , ...commands] = process.argv
+const config = require(path.join(process.cwd(), '.migration.js'))
 const {
     dir,
     keyspace,
@@ -12,7 +13,7 @@ const {
     username,
     password,
     extraOptions = {}
-} = require(path.join(process.cwd(), '.migration.js'))
+} = config
 
 
 const bootstrap = async () => {
@@ -21,7 +22,8 @@ const bootstrap = async () => {
     }
 
     const [command, maxCountStr = '0'] = commands
-    const maxCount = parseInt(maxCountStr)
+    let maxCount = parseInt(maxCountStr)
+
     const client = new cassandra.Client({
         keyspace,
         localDataCenter: dataCenter,
@@ -42,18 +44,23 @@ const bootstrap = async () => {
         ) with clustering order by (created_at DESC);
     `, [])
 
-    const migrations = fs.readdirSync(dir)
+    const migrations = fs.readdirSync(path.join(process.cwd(), dir))
         .filter(e => (e.endsWith('cql') || e.endsWith('sql')) && e.split('_').length > 1)
         .map(e => {
             const [version, ...names] = e.split('_')
             const name = names.join('_').split('.')[0]
-            const file = fs.readFileSync(`${dir}/${e}`, 'utf-8')
-            const splitParts = file.split('--- ')
-            const upScript = splitParts.find(e => e.startsWith('up')).slice(3)
-            const downScript = splitParts.find(e => e.startsWith('down')).slice(5)
+            const file = fs.readFileSync(path.join(`${dir}/${e}`), 'utf-8')
+            let splitParts = file.split('---')
+            const upIndex = splitParts.findIndex(e => e.startsWith(' up'))
+            const downIndex = splitParts.findIndex(e => e.startsWith(' down'))
+            splitParts = splitParts.map(e => e.split('\n').slice(1).join('\n'))
 
-            return {downScript, upScript, version, name}
+            const upScripts = splitParts.filter((e, i) => e && i >= upIndex && i < downIndex)
+            const downScripts = splitParts.filter((e, i) => e && i >= downIndex)
+
+            return {upScripts, downScripts, version, name}
         })
+    console.log(`Total Migration Files : ${migrations.length}`)
 
     let lastMigration
     const {rows} = await client.execute(`SELECT * from dp_migration LIMIT 1`)
@@ -65,18 +72,22 @@ const bootstrap = async () => {
     switch (command) {
         case 'up': {
             let count = 0
+            if (!maxCount) maxCount = migrations.length
+
             for (let i = 0; i < migrations.length; i++) {
                 if (count >= maxCount || !migrations[i]) break
                 if (i <= lastMigrationIndex) continue
-                const {upScript, version, name} = migrations[i]
+                const {upScripts, version, name} = migrations[i]
                 try {
-                    await client.execute(dedent(upScript))
+                    for (let j = 0; j < upScripts.length; j++) {
+                        await client.execute(dedent(upScripts[j]))
+                    }
                 } catch (e) {
                     console.error(e)
                     break
                 }
                 await client.execute(dedent`
-                    INSERT INTO dp_migration (version,name,created_at) 
+                    INSERT INTO dp_migration (version,name,created_at)
                     VALUES (?,?,?)
                 `, [version, name, new Date()])
                 console.log(`Migrated ${name}`)
@@ -86,12 +97,15 @@ const bootstrap = async () => {
             break
         }
         case 'down':
+            if (!maxCount) maxCount = 1
             const targetIndex = lastMigrationIndex - maxCount
             for (let i = lastMigrationIndex; i > targetIndex; i--) {
                 if (!migrations[i]) break
-                const {downScript, version, name} = migrations[i]
+                const {downScripts, version, name} = migrations[i]
                 try {
-                    await client.execute(dedent(downScript))
+                    for (let j = 0; j < downScripts.length; j++) {
+                        await client.execute(dedent(downScripts[j]))
+                    }
                 } catch (e) {
                     console.error(e)
                     break

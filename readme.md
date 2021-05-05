@@ -1,5 +1,10 @@
 ## Simple Cassandra Migration
 
+### Installation
+```
+npm i -g cql-migration
+```
+
 ### Config
 create new file name `.migration.js`
 ```
@@ -23,24 +28,31 @@ example:
 ### Example migration cql
 ```sql
 --- up
+create type sample_type (
+    data text
+)
+---
 create table sample (
     id text PRIMARY KEY,
     name text
 )
 
 --- down
+drop type sample_type;
+---
 drop table sample;
 ```
 
+
 ### Commands
 
+`count` is optional
 ```
 cql-migration up [count]
 ```
-`count` is optional
 
-
+---
+`count` default 1
 ```
 cql-migration down [count]
 ```
-`count` default 1
