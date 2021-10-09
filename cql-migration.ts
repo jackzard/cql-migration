@@ -8,8 +8,8 @@ const config = require(path.join(process.cwd(), '.migration.js'))
 const {
     dir,
     keyspace,
-    dataCenter = 'datacenter1',
     url,
+    dataCenter = 'datacenter1',
     username,
     password,
     extraOptions = {}
@@ -26,10 +26,13 @@ const bootstrap = async () => {
 
     const client = new cassandra.Client({
         keyspace,
-        localDataCenter: dataCenter,
         contactPoints: [url],
         credentials: {
             username, password
+        },
+        localDataCenter: dataCenter,
+        socketOptions: {
+            connectTimeout: 10_000
         },
         ...extraOptions
     })
@@ -60,6 +63,7 @@ const bootstrap = async () => {
 
             return {upScripts, downScripts, version, name}
         })
+        .sort((a, b) => +a.version - +b.version)
 
     let lastMigration
     const {rows} = await client.execute(`SELECT * from dp_migration`)

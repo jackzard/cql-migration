@@ -1,6 +1,6 @@
 {
   "name": "cql-migration",
-  "version": "1.0.7",
+  "version": "1.0.10",
   "main": "cql-migration.ts",
   "bin": {
     "cql-migration": "dist/cli.js"
