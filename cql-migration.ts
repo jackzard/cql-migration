@@ -67,7 +67,7 @@ const bootstrap = async () => {
 
     let lastMigration
     const {rows} = await client.execute(`SELECT * from dp_migration`)
-    if (rows.length) lastMigration = rows.sort((a, b) => b.version - a.version)[0]
+    if (rows.length) lastMigration = rows.sort((a, b) => +b.version - +a.version)[0]
     const lastMigrationIndex = lastMigration
         ? migrations.findIndex(e => e.version === lastMigration.version)
         : -1
